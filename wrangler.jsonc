@@ -2,6 +2,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wafa-shopee-odoo",
   "main": "src/index.ts",
+  // Akun Cloudflare It.wafaindonesia@gmail.com (bukan rahasia); deploy lewat
+  // Buildkite cukup memakai CLOUDFLARE_API_TOKEN.
+  "account_id": "d9eae714f72785d0c85933e6aa13988e",
   "compatibility_date": "2025-10-01",
   "observability": { "enabled": true },
   // Juga callback domain App Shopee Open Platform; DNS dan sertifikat dibuat

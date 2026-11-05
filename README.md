@@ -97,8 +97,27 @@ bun install
 bun run dev        # wrangler dev
 bun run test       # vitest (lewat Node, bukan Bun)
 bun run typecheck
-bun run deploy
 ```
+
+## Rilis
+
+Deploy lewat Buildkite (pipeline **Odoo Helper**, `.buildkite/pipeline.yml`),
+sama seperti repository Wafa lain: push tag `vX.Y.Z` ke GitHub.
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Pipeline menjalankan install, typecheck, test, dan bundle, lalu langsung
+`wrangler deploy --tag vX.Y.Z` bila semuanya lulus (tanpa persetujuan, karena
+tujuannya hanya satu).
+Tag itu tercatat sebagai Worker Version di Cloudflare dan muncul sebagai
+`version` di `GET /health`; setelah deploy, GitHub Release dibuat otomatis.
+`version: "dev"` berarti Worker terakhir di-deploy manual (`bun run deploy`),
+yang sebaiknya hanya untuk keadaan darurat.
+
+Rollback: buka Cloudflare → Workers → wafa-shopee-odoo → Deployments dan
+pilih versi bertag lama, atau `bunx wrangler rollback <version-id>`.
 
 ## Menyalakan
 

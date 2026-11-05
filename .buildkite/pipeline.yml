@@ -1,0 +1,26 @@
+# Buildkite CI/CD — dipicu tag rilis vX.Y.Z yang di-push ke GitHub.
+#   test + bundle → production (Cloudflare Workers) → GitHub Release
+# Tanpa staging dan tanpa persetujuan: Worker ini hanya punya satu tujuan, Odoo
+# production (Worker staging akan ikut menulis ke Odoo yang sama tiap menit).
+# Push tag itulah persetujuannya; deploy hanya jalan bila test lulus.
+# Perintah wafa-* ada di agent contabo (~/ci/bin), sumbernya di wafa/buildkite-ci.
+
+agents:
+  queue: default
+
+steps:
+  - label: ":test_tube: Test & bundle"
+    key: check
+    command: wafa-worker check
+
+  - label: ":rocket: Production: deploy"
+    key: deploy-production
+    depends_on: check
+    command: wafa-worker deploy
+    concurrency: 1
+    concurrency_group: wafa/odoo-helper/worker/production
+
+  - label: ":github: GitHub Release"
+    depends_on: deploy-production
+    command: wafa-release
+    soft_fail: true

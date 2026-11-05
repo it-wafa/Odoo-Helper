@@ -8,6 +8,7 @@ const app = new Hono<AppBindings>();
 app.get("/health", (c) =>
   c.json({
     success: true,
+    version: c.env.VERSION || "dev",
     odoo_url: c.env.ODOO_URL,
     odoo_db: c.env.ODOO_DB || null,
     write_enabled: boolVar(c.env.WRITE_ENABLED),

@@ -25,6 +25,9 @@ export type Env = {
   /** `create_date` SO TikTok paling awal (UTC, format Odoo) yang Tanggal Order-nya diganti. */
   TIKTOK_DATE_FROM?: string;
 
+  /** Tag rilis (vX.Y.Z), diisi pipeline lewat `wrangler deploy --var VERSION:…`. Kosong = deploy manual. */
+  VERSION?: string;
+
   // bindings
   /** Token toko Shopee (refresh token berganti setiap dipakai). */
   SHOPEE_KV: KVNamespace;
