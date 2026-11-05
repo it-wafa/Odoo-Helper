@@ -1,19 +1,21 @@
 # wafa-shopee-odoo
 
-Merapikan Sales Order yang dibuat konektor Shopee bawaan Odoo (`sale_shopee`)
-di `wafa-indonesia.odoo.com`. Worker ini menggantikan tiga automation rule
+Merapikan Sales Order yang dibuat konektor Shopee (`sale_shopee`) dan TikTok
+Shop (`sale_tiktok`) bawaan Odoo di `wafa-indonesia.odoo.com`. Worker ini menggantikan tiga automation rule
 berkode Python, karena Odoo menagih kode semacam itu sebagai "Maintenance Kode
 Kustom" (per 100 baris kode). Kode yang memanggil External API dari luar Odoo
 tidak dihitung.
 
-Setiap menit, SO Shopee yang dibuat dalam `LOOKBACK_HOURS` terakhir diperiksa:
+Setiap menit, SO yang dibuat dalam `LOOKBACK_HOURS` terakhir diperiksa. Baris
+biaya dan pecah combo baru berlaku untuk Shopee; nama kontak dan Tanggal Order
+untuk Shopee dan TikTok:
 
 | Langkah | Masalah dari konektor | Perbaikan |
 | --- | --- | --- |
 | Baris biaya | Konektor menambah baris Shopee Order Discount, Amount Adjustment, dan Shipping, sehingga total SO = yang dibayar pembeli | Harga baris dijadikan 0 (SO terkonfirmasi) atau baris dihapus (SO draf). SO berisi harga barang saja, sama seperti entri manual |
 | Pecah combo | Produk combo (mis. `CB-BT1-5`) masuk sebagai satu baris tanpa sub-baris. Pengiriman komponen tidak dibuat dan pendapatan tidak terbagi per buku | Sub-baris komponen dibuat (`combo_item_id`, `linked_line_id`) dengan harga dibagi sebanding Harga Combo tiap grup, lalu harga baris combo dijadikan 0. Karena SO sudah terkonfirmasi, Odoo menambah pengiriman komponennya sendiri |
-| Nama kontak | Kontak bernama username Shopee saja | Diganti menjadi `S-<no pesanan> (<username>)`. Pembeli yang memesan lagi memakai kontak yang sama, dan namanya mengikuti pesanan terbaru |
-| Tanggal Order | Tanggal Order = waktu pesanan dibuat di Shopee, padahal pesanan baru ditarik setelah dibayar. Pesanan yang dibayar belakangan tercatat di hari (atau bulan) sebelumnya | Diganti dengan waktu bayar (`pay_time`) dari Shopee Open API. Konektor memperbarui SO tiap jam; bila tanggalnya tertimpa, putaran berikutnya mengembalikannya |
+| Nama kontak | Kontak bernama username Shopee, atau nama bawaan konektor TikTok, saja | Diganti menjadi `S-<no pesanan> (<username>)` (Shopee) atau `T-<no pesanan> (<nama>)` (TikTok; API TikTok tidak memberikan username, jadi nama bawaan konektor yang dipakai). Pembeli yang memesan lagi memakai kontak yang sama, dan namanya mengikuti pesanan terbaru |
+| Tanggal Order | Tanggal Order = waktu pesanan dibuat, padahal pesanan baru ditarik setelah dibayar. Pesanan yang dibayar belakangan tercatat di hari (atau bulan) sebelumnya | Diganti dengan waktu bayar: `pay_time` dari Shopee Open API, `paid_time` dari TikTok Shop API (COD: waktu pesanan dibuat). Dibayar Sabtu → Senin 00:00 WIB, Minggu → Senin 00:01 WIB. Konektor memperbarui SO tiap jam; bila tanggalnya tertimpa, putaran berikutnya mengembalikannya |
 
 SO yang batal atau barisnya sudah difakturkan tidak disentuh. SO yang terkunci
 ("Kunci Order Terkonfirmasi" aktif, jadi SO Shopee terkunci sejak dibuat) dibuka
@@ -49,7 +51,10 @@ Vars ada di `wrangler.jsonc`:
 | `SHOPEE_SHOP_ID` | `225736119` | Toko yang boleh dihubungkan; callback dari toko lain ditolak |
 | `SHOPEE_DATE_WRITE` | `0` | `1` = Tanggal Order ditulis; selain itu dry run langkah ini saja |
 | `SHOPEE_DATE_FROM` | `2026-11-05 02:07:00` | SO yang dibuat sebelum waktu ini (UTC) tidak diubah Tanggal Order-nya |
-| `WEEKEND_TO_MONDAY` | `1` | Pesanan yang dibayar Sabtu/Minggu (WIB) bertanggal Senin berikutnya 00:00 WIB |
+| `WEEKEND_TO_MONDAY` | `1` | Pesanan yang dibayar Sabtu (WIB) bertanggal Senin berikutnya 00:00 WIB, Minggu 00:01 WIB |
+| `TIKTOK_HOST` | `https://open-api.tiktokglobalshop.com` | TikTok Shop Open API |
+| `TIKTOK_DATE_WRITE` | `1` | `1` = Tanggal Order SO TikTok ditulis; selain itu dry run langkah ini saja |
+| `TIKTOK_DATE_FROM` | kosong | Opsional: SO TikTok yang dibuat sebelum waktu ini (UTC) tidak diubah Tanggal Order-nya |
 
 Secrets (`wrangler secret put <NAMA>`):
 
@@ -60,7 +65,11 @@ Secrets (`wrangler secret put <NAMA>`):
 | `ADMIN_API_KEY` | Dibuat sendiri, untuk `/admin/*` |
 | `SHOPEE_PARTNER_ID`, `SHOPEE_PARTNER_KEY` | Shopee Open Platform → App List → Wafa Shopee and Odoo → Live Partner_id / Live API Partner Key. Kunci live punya masa berlaku (lihat konsol); perbarui keduanya sebelum habis. Kosong = langkah Tanggal Order dilewati |
 
-User Odoo-nya butuh hak tulis Penjualan (baris SO) dan Kontak.
+User Odoo-nya butuh hak tulis Penjualan (baris SO) dan Kontak, serta hak baca
+toko TikTok (`tiktok.shop`): App key, App secret, access token, dan shop cipher
+TikTok dibaca dari sana pada putaran yang punya SO TikTok, bukan disimpan
+sebagai secret Worker. Odoo yang memperbarui access token; Worker tidak pernah
+me-refresh-nya.
 
 Untuk pengembangan lokal, salin `.dev.vars.example` menjadi `.dev.vars`.
 
