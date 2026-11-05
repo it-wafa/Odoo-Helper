@@ -1,0 +1,9 @@
+# Login user Odoo pemilik API key
+ODOO_LOGIN=
+# Odoo → Preferensi → Keamanan Akun → Kunci API Baru (pisahkan dari kunci SIFA)
+ODOO_API_KEY=
+# Kunci untuk endpoint /admin/*
+ADMIN_API_KEY=
+# Shopee Open Platform → App List → Wafa Shopee and Odoo → Live Partner_id / Live API Partner Key
+SHOPEE_PARTNER_ID=
+SHOPEE_PARTNER_KEY=

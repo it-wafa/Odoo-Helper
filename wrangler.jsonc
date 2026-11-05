@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wafa-shopee-odoo",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-01",
+  "observability": { "enabled": true },
+  // Juga callback domain App Shopee Open Platform; DNS dan sertifikat dibuat
+  // Cloudflare. *.workers.dev tetap aktif.
+  "routes": [{ "pattern": "shopee.wafaindonesia.or.id", "custom_domain": true }],
+  "triggers": {
+    // Konektor Shopee Odoo menarik pesanan sekali per jam, tetapi staf bisa
+    // menyinkronkan manual kapan saja; tiap menit supaya SO beres sebelum
+    // sempat difakturkan.
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "ODOO_URL": "https://wafa-indonesia.odoo.com",
+    "ODOO_DB": "wafa-indonesia",
+    "FEE_PRODUCT_IDS": "953,652,651",
+    "LOOKBACK_HOURS": "48",
+    "MAX_RENAMES_PER_RUN": "20",
+    "WRITE_ENABLED": "1",
+    "SHOPEE_HOST": "https://partner.shopeemobile.com",
+    "SHOPEE_SHOP_ID": "225736119",
+    "SHOPEE_DATE_WRITE": "1",
+    // Hanya pesanan yang masuk setelah fitur ini dinyalakan (5 Nov 2026 09:07 WIB).
+    "SHOPEE_DATE_FROM": "2026-11-05 02:07:00",
+    // Sabtu → Senin 00:00 WIB, Minggu → Senin 00:01 WIB (Shopee dan TikTok).
+    "WEEKEND_TO_MONDAY": "1",
+    // Kredensial TikTok dibaca dari toko TikTok di Odoo, bukan dari secret.
+    "TIKTOK_HOST": "https://open-api.tiktokglobalshop.com",
+    "TIKTOK_DATE_WRITE": "1"
+  },
+  // Token toko Shopee; refresh token berganti setiap dipakai.
+  "kv_namespaces": [{ "binding": "SHOPEE_KV", "id": "cfdbbab559384cc8bd36867f66dd97b4" }]
+}
