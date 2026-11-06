@@ -18,6 +18,7 @@ const RELATIONS: Record<string, Record<string, string>> = {
     combo_item_id: "product.combo.item",
   },
   "product.product": { product_tmpl_id: "product.template" },
+  "product.pricelist.item": { product_tmpl_id: "product.template" },
   "product.combo.item": { product_id: "product.product", combo_id: "product.combo" },
 };
 

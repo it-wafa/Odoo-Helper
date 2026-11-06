@@ -23,6 +23,8 @@
     "LOOKBACK_HOURS": "48",
     "MAX_RENAMES_PER_RUN": "20",
     "WRITE_ENABLED": "1",
+    // Pricelist "E-Commerce": bobot pembagian harga combo ke komponennya.
+    "COMBO_PRICELIST_ID": "13",
     "SHOPEE_HOST": "https://partner.shopeemobile.com",
     "SHOPEE_SHOP_ID": "225736119",
     "SHOPEE_DATE_WRITE": "1",

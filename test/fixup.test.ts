@@ -69,6 +69,49 @@ beforeEach(() => {
 afterEach(() => uninstall());
 
 describe("runFixup", () => {
+  it("membagi harga combo menurut pricelist marketplace, seperti TTG 62.000 + GKU 10.000", async () => {
+    order(6800);
+    line(1, 6800, COMBO_PRODUCT, 130000);
+    // BT1 berharga marketplace 2x lipat; BT3 tidak ada di pricelist (Harga Combo 12.000).
+    const rule = (id: number, pricelist: number, pid: number, price: number) =>
+      odoo.add("product.pricelist.item", { id, pricelist_id: pricelist, applied_on: "1_product", compute_price: "fixed", product_tmpl_id: pid, fixed_price: price });
+    rule(1, 13, BT[0]!, 24000);
+    rule(2, 13, BT[1]!, 12000);
+    rule(3, 13, BT[3]!, 12000);
+    rule(4, 13, BT[4]!, 0); // harga 0 di pricelist: tetap memakai Harga Combo
+    rule(5, 99, BT[1]!, 999000); // pricelist lain diabaikan
+
+    const r = await runFixup({ ...E, COMBO_PRICELIST_ID: "13" });
+
+    expect(r.errors).toEqual([]);
+    // Bobot 24:12:12:12:12 dari 130.000.
+    expect(r.combosSplit[0]!.children.map((c) => c.price)).toEqual([43333, 21667, 21667, 21667, 21666]);
+  });
+
+  it("memakai Harga Combo bila COMBO_PRICELIST_ID kosong", async () => {
+    order(6801);
+    line(1, 6801, COMBO_PRODUCT, 130000);
+    odoo.add("product.pricelist.item", { id: 1, pricelist_id: 13, applied_on: "1_product", compute_price: "fixed", product_tmpl_id: BT[0]!, fixed_price: 24000 });
+
+    const r = await runFixup({ ...E, COMBO_PRICELIST_ID: "" });
+
+    expect(r.combosSplit[0]!.children.map((c) => c.price)).toEqual([26000, 26000, 26000, 26000, 26000]);
+  });
+
+  it("tidak memecah combo bila komponennya sudah dientri manual, seperti SO 6764", async () => {
+    order(6764);
+    line(1, 6764, COMBO_PRODUCT, 130000);
+    line(2, 6764, BT[0]!, 62000, { qty_delivered: 1 });
+
+    const r = await runFixup(E);
+
+    expect(r.errors).toEqual([]);
+    expect(r.combosSplit).toEqual([]);
+    expect(r.combosSkipped.map((c) => c.lineId)).toEqual([1]);
+    expect(odoo.get("sale.order.line", 1)!.price_unit).toBe(130000);
+    expect(odoo.all("sale.order.line")).toHaveLength(2);
+  });
+
   it("merapikan SO bundling Shopee seperti SO 6597", async () => {
     order(6597, { shopee_order_ref: "261029V1SK2G1A" });
     odoo.add("res.partner", { id: 11597, name: "nabilaimaniy" });

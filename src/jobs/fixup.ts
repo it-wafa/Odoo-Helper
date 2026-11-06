@@ -19,6 +19,11 @@ export type FixupReport = {
     price: number;
     children: { product: string; price: number }[];
   }[];
+  /**
+   * Baris combo yang tidak dipecah karena SO-nya sudah berisi komponen combo
+   * sebagai baris biasa (mis. dientri manual). Perlu ditangani manual.
+   */
+  combosSkipped: { lineId: number; order: string; product: string }[];
   /** Baris combo yang sub-barisnya sudah ada tetapi harganya belum 0. */
   combosRepriced: number[];
   contactsRenamed: { partnerId: number; from: string; to: string }[];
@@ -79,6 +84,7 @@ export async function runFixup(env: Env, opts: { dryRun?: boolean } = {}): Promi
     feeLinesZeroed: [],
     feeLinesDeleted: [],
     combosSplit: [],
+    combosSkipped: [],
     combosRepriced: [],
     contactsRenamed: [],
     orderDates: { dryRun: dryRun || !boolVar(env.SHOPEE_DATE_WRITE), changed: [] },
@@ -113,7 +119,7 @@ export async function runFixup(env: Env, opts: { dryRun?: boolean } = {}): Promi
   const external = { calls: 0 };
   const steps: [string, () => Promise<void>][] = [
     ["fee_lines", () => fixFeeLines(odoo, env, openShopeeLine, dryRun, report)],
-    ["combo_split", () => splitCombos(odoo, openShopeeLine, dryRun, report)],
+    ["combo_split", () => splitCombos(odoo, env, openShopeeLine, dryRun, report)],
     ["contact_rename", () => renameContacts(odoo, env, since, dryRun, report)],
     ["order_date", () => setOrderDates(odoo, env, since, report, external)],
     ["tiktok_order_date", () => setTikTokOrderDates(odoo, env, since, report, external)],
@@ -174,6 +180,7 @@ async function fixFeeLines(
 
 async function splitCombos(
   odoo: OdooClient,
+  env: Env,
   openShopeeLine: Domain,
   dryRun: boolean,
   report: FixupReport,
@@ -215,6 +222,25 @@ async function splitCombos(
   const itemIds = [...combos.values()].map((c) => idList(c.combo_item_ids)[0]).filter(isId);
   const items = byId(await odoo.read("product.combo.item", itemIds, ["product_id"]));
 
+  // Komponen yang sudah ada sebagai baris biasa berarti SO sudah diperbaiki
+  // manual: memecah combo akan menggandakan nilai SO dan pengirimannya.
+  const manual = await odoo.searchRead(
+    "sale.order.line",
+    [
+      ["order_id", "in", orderIds(toSplit)],
+      ["combo_item_id", "=", false],
+      ["product_uom_qty", ">", 0],
+    ],
+    ["order_id", "product_id"],
+  );
+  const manualKey = new Set(manual.map((l) => `${m2oId(l.order_id)}:${m2oId(l.product_id)}`));
+
+  const marketplacePrice = await marketplacePrices(
+    odoo,
+    numberVar(env.COMBO_PRICELIST_ID, 0),
+    [...items.values()].map((i) => m2oId(i.product_id)).filter(isId),
+  );
+
   const vals: Row[] = [];
   const split: number[] = [];
   for (const line of toSplit) {
@@ -229,8 +255,20 @@ async function splitCombos(
       });
       continue;
     }
+    if (picked.some((item) => manualKey.has(`${m2oId(line.order_id)}:${m2oId(item!.product_id)}`))) {
+      report.combosSkipped.push({
+        lineId: line.id as number,
+        order: label(line.order_id),
+        product: label(line.product_id),
+      });
+      continue;
+    }
     const price = line.price_unit as number;
-    const shares = splitPrice(price, groups.map((g) => (g.base_price as number) || 0));
+    // Bobot: harga marketplace komponen; tanpa harga itu, Harga Combo Odoo.
+    const shares = splitPrice(
+      price,
+      groups.map((g, i) => marketplacePrice.get(m2oId(picked[i]!.product_id) ?? 0) || (g.base_price as number) || 0),
+    );
     const childVals = picked.map((item, i) => ({
       order_id: m2oId(line.order_id),
       product_id: m2oId(item!.product_id),
@@ -271,6 +309,34 @@ const CHANNELS: { channel: Channel; shop: string; ref: string }[] = [
   { channel: "S", shop: "shopee_shop_id", ref: "shopee_order_ref" },
   { channel: "T", shop: "tiktok_shop_id", ref: "tiktok_order_ref" },
 ];
+
+/**
+ * Harga tetap per produk dari pricelist marketplace. Harga Combo Odoo dihitung
+ * dari harga jual, yang bisa jauh dari harga marketplace (TTG 35.000 vs 62.000,
+ * AQH5 0 vs 47.500), sehingga pendapatan per produk meleset bila dipakai sebagai
+ * bobot. Hanya aturan harga tetap per produk yang dibaca.
+ */
+async function marketplacePrices(
+  odoo: OdooClient,
+  pricelistId: number,
+  productIds: number[],
+): Promise<Map<number, number>> {
+  if (!pricelistId || productIds.length === 0) return new Map();
+  const products = await odoo.read("product.product", productIds, ["product_tmpl_id"]);
+  const templateIds = [...new Set(products.map((p) => m2oId(p.product_tmpl_id)).filter(isId))];
+  const rules = await odoo.searchRead(
+    "product.pricelist.item",
+    [
+      ["pricelist_id", "=", pricelistId],
+      ["applied_on", "=", "1_product"],
+      ["compute_price", "=", "fixed"],
+      ["product_tmpl_id", "in", templateIds],
+    ],
+    ["product_tmpl_id", "fixed_price"],
+  );
+  const byTemplate = new Map(rules.map((r) => [m2oId(r.product_tmpl_id), r.fixed_price as number]));
+  return new Map(products.map((p) => [p.id as number, byTemplate.get(m2oId(p.product_tmpl_id)) ?? 0]));
+}
 
 async function renameContacts(
   odoo: OdooClient,
@@ -515,6 +581,7 @@ export function hasActivity(r: FixupReport): boolean {
     r.feeLinesZeroed.length +
       r.feeLinesDeleted.length +
       r.combosSplit.length +
+      r.combosSkipped.length +
       r.combosRepriced.length +
       r.contactsRenamed.length +
       r.orderDates.changed.length +

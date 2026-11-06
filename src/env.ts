@@ -8,6 +8,8 @@ export type Env = {
   MAX_RENAMES_PER_RUN: string;
   /** "1" = perubahan ditulis ke Odoo; selain itu dry run. */
   WRITE_ENABLED: string;
+  /** id pricelist harga marketplace; bobot pembagian harga combo. Kosong = Harga Combo saja. */
+  COMBO_PRICELIST_ID?: string;
   /** Shopee Open API: https://partner.shopeemobile.com (live). */
   SHOPEE_HOST: string;
   /** Toko yang diotorisasi; callback otorisasi dari toko lain ditolak. */

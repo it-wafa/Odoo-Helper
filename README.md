@@ -13,7 +13,7 @@ untuk Shopee dan TikTok:
 | Langkah | Masalah dari konektor | Perbaikan |
 | --- | --- | --- |
 | Baris biaya | Konektor menambah baris Shopee Order Discount, Amount Adjustment, dan Shipping, sehingga total SO = yang dibayar pembeli | Harga baris dijadikan 0 (SO terkonfirmasi) atau baris dihapus (SO draf). SO berisi harga barang saja, sama seperti entri manual |
-| Pecah combo | Produk combo (mis. `CB-BT1-5`) masuk sebagai satu baris tanpa sub-baris. Pengiriman komponen tidak dibuat dan pendapatan tidak terbagi per buku | Sub-baris komponen dibuat (`combo_item_id`, `linked_line_id`) dengan harga dibagi sebanding Harga Combo tiap grup, lalu harga baris combo dijadikan 0. Karena SO sudah terkonfirmasi, Odoo menambah pengiriman komponennya sendiri |
+| Pecah combo | Produk combo (mis. `CB-BT1-5`) masuk sebagai satu baris tanpa sub-baris. Pengiriman komponen tidak dibuat dan pendapatan tidak terbagi per buku | Sub-baris komponen dibuat (`combo_item_id`, `linked_line_id`) dengan harga dibagi sebanding harga komponen di pricelist `COMBO_PRICELIST_ID` (komponen tanpa harga di sana memakai Harga Combo), lalu harga baris combo dijadikan 0. Karena SO sudah terkonfirmasi, Odoo menambah pengiriman komponennya sendiri. Bila komponennya sudah ada sebagai baris biasa (entri manual), combo tidak dipecah dan dilaporkan di `combosSkipped` |
 | Nama kontak | Kontak bernama username Shopee, atau nama bawaan konektor TikTok, saja | Diganti menjadi `S-<no pesanan> (<username>)` (Shopee) atau `T-<no pesanan> (<nama>)` (TikTok; API TikTok tidak memberikan username, jadi nama bawaan konektor yang dipakai). Pembeli yang memesan lagi memakai kontak yang sama, dan namanya mengikuti pesanan terbaru |
 | Tanggal Order | Tanggal Order = waktu pesanan dibuat, padahal pesanan baru ditarik setelah dibayar. Pesanan yang dibayar belakangan tercatat di hari (atau bulan) sebelumnya | Diganti dengan waktu bayar: `pay_time` dari Shopee Open API, `paid_time` dari TikTok Shop API (COD: waktu pesanan dibuat). Dibayar Sabtu → Senin 00:00 WIB, Minggu → Senin 00:01 WIB. Konektor memperbarui SO tiap jam; bila tanggalnya tertimpa, putaran berikutnya mengembalikannya |
 
@@ -47,6 +47,7 @@ Vars ada di `wrangler.jsonc`:
 | `LOOKBACK_HOURS` | `48` | Rentang umur SO yang diperiksa |
 | `MAX_RENAMES_PER_RUN` | `20` | Batas ganti nama kontak per putaran |
 | `WRITE_ENABLED` | `0` | `0` = dry run, rencana perubahan hanya dicatat ke log |
+| `COMBO_PRICELIST_ID` | `13` | Pricelist "E-Commerce": bobot pembagian harga combo. Hanya aturan harga tetap per produk yang dibaca. Kosong = Harga Combo saja |
 | `SHOPEE_HOST` | `https://partner.shopeemobile.com` | Shopee Open API (live) |
 | `SHOPEE_SHOP_ID` | `225736119` | Toko yang boleh dihubungkan; callback dari toko lain ditolak |
 | `SHOPEE_DATE_WRITE` | `0` | `1` = Tanggal Order ditulis; selain itu dry run langkah ini saja |
