@@ -44,6 +44,8 @@ export type FixupReport = {
    * (API tidak dipanggil), `not_configured` = kredensial toko di Odoo kosong.
    */
   tiktok: "idle" | "not_configured" | "connected";
+  /** Tanggal Terjadwal pengiriman yang belum selesai, disamakan dengan Tanggal Order SO-nya. */
+  scheduledDates: { picking: string; order: string; from: string; to: string }[];
   /** Masalah per langkah; langkah lain tetap dijalankan. */
   errors: { step: string; error: string }[];
   rpcCalls: number;
@@ -91,6 +93,7 @@ export async function runFixup(env: Env, opts: { dryRun?: boolean } = {}): Promi
     shopee: "not_configured",
     tiktokDates: { dryRun: dryRun || !boolVar(env.TIKTOK_DATE_WRITE), changed: [] },
     tiktok: "idle",
+    scheduledDates: [],
     errors: [],
     rpcCalls: 0,
   };
@@ -123,6 +126,7 @@ export async function runFixup(env: Env, opts: { dryRun?: boolean } = {}): Promi
     ["contact_rename", () => renameContacts(odoo, env, since, dryRun, report)],
     ["order_date", () => setOrderDates(odoo, env, since, report, external)],
     ["tiktok_order_date", () => setTikTokOrderDates(odoo, env, since, report, external)],
+    ["scheduled_date", () => syncScheduledDates(odoo, env, since, report, external)],
   ];
   for (const [step, run] of steps) {
     try {
@@ -563,6 +567,60 @@ async function setTikTokOrderDates(
   }
 }
 
+/**
+ * Tanggal Terjadwal pengiriman dibuat dari Tanggal Order asli konektor dan tidak
+ * ikut berubah saat Tanggal Order diganti. Disamakan supaya gudang melihat jadwal
+ * yang sama dengan pesanannya (pesanan akhir pekan dijadwalkan Senin). Hanya
+ * pengiriman yang belum selesai/batal: Odoo menolak mengubah yang sudah selesai,
+ * dan realisasinya tercatat di Tanggal Efektif. Mengikuti batas tanggal dan
+ * sakelar tulis marketplace-nya, karena SO di luar itu tetap bertanggal lama.
+ */
+async function syncScheduledDates(
+  odoo: OdooClient,
+  env: Env,
+  since: string,
+  report: FixupReport,
+  external: { calls: number },
+): Promise<void> {
+  const channels = [
+    ...(shopeeClient(env)
+      ? [{ shop: "shopee_shop_id", from: env.SHOPEE_DATE_FROM, dryRun: report.orderDates.dryRun }]
+      : []),
+    { shop: "tiktok_shop_id", from: env.TIKTOK_DATE_FROM, dryRun: report.tiktokDates.dryRun },
+  ];
+  for (const { shop, from, dryRun } of channels) {
+    const pickings = await odoo.searchRead(
+      "stock.picking",
+      [
+        [`sale_id.${shop}`, "!=", false],
+        ["sale_id.create_date", ">=", from && from > since ? from : since],
+        ["sale_id.state", "=", "sale"],
+        ["state", "in", ["draft", "waiting", "confirmed", "assigned"]],
+      ],
+      ["name", "scheduled_date", "sale_id"],
+      { order: "id asc" },
+    );
+    if (pickings.length === 0) continue;
+    const orders = byId(
+      await odoo.read("sale.order", [...new Set(pickings.map((p) => m2oId(p.sale_id)).filter(isId))], ["date_order"]),
+    );
+    for (const p of pickings) {
+      const to = orders.get(m2oId(p.sale_id) ?? 0)?.date_order as string | undefined;
+      if (!to || to === p.scheduled_date) continue;
+      if (!dryRun) {
+        if (odoo.calls + external.calls >= SUBREQUEST_BUDGET) return;
+        await odoo.write("stock.picking", [p.id as number], { scheduled_date: to });
+      }
+      report.scheduledDates.push({
+        picking: String(p.name),
+        order: label(p.sale_id),
+        from: String(p.scheduled_date),
+        to,
+      });
+    }
+  }
+}
+
 function byId(rows: Row[]): Map<number, Row> {
   return new Map(rows.map((r) => [r.id as number, r]));
 }
@@ -586,6 +644,7 @@ export function hasActivity(r: FixupReport): boolean {
       r.contactsRenamed.length +
       r.orderDates.changed.length +
       r.tiktokDates.changed.length +
+      r.scheduledDates.length +
       r.errors.length >
     0
   );

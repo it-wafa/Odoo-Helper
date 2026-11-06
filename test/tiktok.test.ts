@@ -146,6 +146,50 @@ describe("Tanggal Order TikTok", () => {
   });
 });
 
+describe("Tanggal Terjadwal pengiriman", () => {
+  const picking = (id: number, sale: number, state: string, at: string) =>
+    odoo.add("stock.picking", { id, name: `DO/${id}`, sale_id: sale, state, scheduled_date: at });
+
+  it("mengikuti Tanggal Order hanya pada pengiriman yang belum selesai", async () => {
+    order(1, "R1", "2026-11-07 02:00:00");
+    tiktok.addOrder({ id: "R1", status: "AWAITING_SHIPMENT", create_time: epoch("2026-11-07 02:00:00"), paid_time: epoch("2026-11-07 02:01:00") });
+    picking(11, 1, "assigned", "2026-11-07 02:00:00");
+    picking(12, 1, "done", "2026-11-07 02:00:00");
+    picking(13, 1, "cancel", "2026-11-07 02:00:00");
+
+    const r = await runFixup({ ...E, WEEKEND_TO_MONDAY: "1" });
+
+    expect(r.errors).toEqual([]);
+    expect(r.scheduledDates).toEqual([{ picking: "DO/11", order: "SO/1", from: "2026-11-07 02:00:00", to: "2026-11-08 17:00:00" }]);
+    expect(odoo.get("stock.picking", 11)!.scheduled_date).toBe("2026-11-08 17:00:00");
+    expect(odoo.get("stock.picking", 12)!.scheduled_date).toBe("2026-11-07 02:00:00");
+    expect(odoo.get("stock.picking", 13)!.scheduled_date).toBe("2026-11-07 02:00:00");
+
+    const writes = odoo.writes().length;
+    expect((await runFixup({ ...E, WEEKEND_TO_MONDAY: "1" })).scheduledDates).toEqual([]);
+    expect(odoo.writes().length).toBe(writes);
+  });
+
+  it("dry run bila penulisan tanggal marketplace dimatikan", async () => {
+    order(1, "R1", "2026-11-04 10:00:00");
+    picking(11, 1, "assigned", "2026-11-04 09:00:00");
+
+    const r = await runFixup({ ...E, TIKTOK_DATE_WRITE: "0" });
+
+    expect(r.scheduledDates).toHaveLength(1);
+    expect(odoo.get("stock.picking", 11)!.scheduled_date).toBe("2026-11-04 09:00:00");
+  });
+
+  it("membiarkan SO yang dibuat sebelum batas tanggal", async () => {
+    order(1, "R1", "2026-11-04 10:00:00", { create_date: odooDatetime(new Date(Date.now() - 3600_000)) });
+    picking(11, 1, "assigned", "2026-11-04 09:00:00");
+
+    const r = await runFixup({ ...E, TIKTOK_DATE_FROM: odooDatetime(new Date(Date.now() - 60_000)) });
+
+    expect(r.scheduledDates).toEqual([]);
+  });
+});
+
 describe("nama kontak TikTok", () => {
   it("memberi nama T-<no pesanan> (<nama>) dan mengikuti pesanan terbaru pembeli", async () => {
     order(1, "586937938589943642", "2026-11-04 10:00:00");
